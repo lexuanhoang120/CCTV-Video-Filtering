@@ -4,6 +4,20 @@
 
 This project provides an end-to-end pipeline for automatically collecting, filtering, and refining CCTV video datasets. The system consists of three modules, including a downloader module that searches and downloads videos from internet, a filtering module that classifies videos as CCTV or non-CCTV footage, and a refinement module that performs additional quality control on the filtered dataset to ensure high-quality surveillance video collections for computer vision research.
 
+## Demo Samples
+
+### Pipeline
+
+![Pipeline Overview](docs/pipeline.png)
+
+### Prompt Example
+
+![Prompt Example](docs/prompt.png)
+
+### Output Example
+
+![Output Example](docs/output.png)
+
 ## Installation
 
 Create and activate a new conda environment:
@@ -119,4 +133,3 @@ All modules are configured via YAML files in `assets/cfg/`. Edit these files bef
     - Score mask modes: `score_mask`, `score_mask_v2`, `score_mask_v3`
   - `vqa.score_threshold` (float): Score threshold for detection (used in score_mask mode, default: 0.3)
   - `refinement_module.N` (float): Seconds to pad before/after detected segments (default: 0.0)
-
