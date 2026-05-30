@@ -1,39 +1,183 @@
-# Automatic CCTV Video Dataset Construction
+# CCTV Video Filtering Module
 
-## Description
+> **Note:** This project was completed during an internship at [PIASpace](https://www.pia.space/). Source code is not publicly available due to confidentiality restrictions.
 
-This project provides an end-to-end pipeline for automatically collecting, filtering, and refining CCTV video datasets. The system consists of three modules, including a downloader module that searches and downloads videos from internet, a filtering module that classifies videos as CCTV or non-CCTV footage, and a refinement module that performs additional quality control on the filtered dataset to ensure high-quality surveillance video collections for computer vision research.
+A VLM-powered video classification module that automatically identifies CCTV and surveillance footage using frame-level analysis with InternVL and Qwen-VL models.
+
+- **Models**: InternVL3-1B, InternVL3-2B, Qwen3-VL-2B
+- **Input**: Single videos or batch JSONL datasets
+- **Output**: JSONL predictions with class labels, confidence scores, and reasoning
+- **Target Anomaly Classes**: Fire, Smoke, Violence, Falldown
+
+> The first half of this README covers the **Filtering Module** in detail. Scroll past the divider for the **full pipeline** (Downloader → Filtering → Refinement).
 
 ## Demo Samples
 
-### Pipeline
+### Module Overview
 
-![Pipeline Overview](docs/pipeline.png)
+![Module Overview](docs/pipeline.png)
 
-### Prompt Example
+### Input Example
+
+**Input video sample:** [YouTube demo](https://www.youtube.com/watch?v=yjukCBvGYSE)
+
+**Prompt Example:**
+
 
 ![Prompt Example](docs/prompt.png)
+
+Prompt design had a strong impact on accuracy — optimized prompts incorporating CCTV-specific terminology (surveillance camera, security footage, fixed camera, incident context) significantly improved classification performance.
 
 ### Output Example
 
 ![Output Example](docs/output.png)
 
-## Installation
+### Lightweight Baseline
 
-Create and activate a new conda environment:
+A **grayscale-difference heuristic** was also tested as a fast, non-VLM baseline: frames with high pixel-level change over time are more likely to originate from static surveillance cameras. While useful for pre-filtering, the VLM approach ultimately delivered higher accuracy.
+
+---
+
+## Performance
+
+| Dataset | Model | Videos | Accuracy |
+|---|---|---|---|
+| Small labeled test set | Qwen3-VL-2B | 18 | **94.44%** |
+| Large-scale internal dataset | InternVL3-2B | 425 | **83.53%** |
+
+- **Qwen3-VL-2B** achieved the highest single accuracy on the curated test set with optimized prompts.
+- **InternVL3-2B** performed best on the larger, real-world internal dataset.
+- Prompt engineering was critical — tailored prompts incorporating surveillance-specific vocabulary consistently outperformed generic ones.
+
+## Prerequisites
+
+A GPU with sufficient VRAM and the following dependencies:
+
+```bash
+pip install torch torchvision opencv-python numpy pillow pyyaml transformers accelerate
+```
+
+The `base_model.py` file containing InternVLModel and QwenVLModel class definitions is also required (included in `filtering_module/`).
+
+## Project Structure
+
+```plaintext
+.
+├── filtering_module/
+│   ├── base_model.py       # Model wrappers for InternVL/Qwen
+│   └── main.py             # Main execution script
+├── config/
+│   └── config.yaml         # Configuration parameters
+├── prompt/                 # The instruction sent to the model
+├── dataset.jsonl           # List of videos and ground truth
+├── videos/                 # Folder containing .mp4/.avi files
+└── results/                # Generated JSONL prediction logs
+```
+
+## Configuration
+
+### 1. config.yaml
+
+```yaml
+model_type: "both"          # Options: internvl, qwenvl, both
+output_mode: json           # Options: json, text
+num_frames: 8
+prompt_path: "prompt.txt"
+dataset_path: "dataset.jsonl"
+video_folder: "videos"
+
+models:
+  - name: "InternVL3-1B"
+    type: "internvl"
+    path: "path/to/internvl/model"
+  - name: "Qwen3-VL-2B"
+    type: "qwenvl"
+    path: "path/to/qwen/model"
+```
+
+### 2. dataset.jsonl
+
+```json
+{"video": "sample1.mp4", "is_cctv": true}
+{"video": "sample2.mp4", "is_cctv": false}
+```
+
+### 3. Prompt
+
+The prompt instructs the model to return a JSON object. For best results, include CCTV-specific terminology:
+
+```
+Analyze these frames from a video. Determine if this is CCTV/surveillance footage.
+Look for indicators such as: fixed camera angle, surveillance camera placement,
+security footage characteristics, timestamp overlays, and static perspective.
+Return a JSON object with keys: 'class' (either 'cctv' or 'non-cctv'),
+'confidence' (0-1), and 'reasoning' (string).
+```
+
+## Usage
+
+```bash
+python main.py --config config/config.yaml
+```
+
+### Command Line Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `--config` | `config/config.yaml` | Path to YAML configuration file |
+| `--quiet` / `-q` | `False` | Reduce output to final summaries only |
+
+## Output & Results
+
+The script provides detailed terminal output for every video processed:
+
+```plaintext
+======================================================================
+CCTV DETECTION RESULT - InternVL3-1B
+======================================================================
+Video File:        office_cam.mp4
+Resolution:        1920x1080
+Is CCTV:           True
+Confidence:        0.95
+Correctness:       ✓
+Model Response:    {'class': 'cctv', 'confidence': 0.95, 'reasoning': '...'}
+----------------------------------------------------------------------
+PERFORMANCE METRICS
+Preprocessing:         0.45s  ( 12.1%)
+Model Inference:       3.20s  ( 87.9%)
+======================================================================
+```
+
+Results are also saved to `results_[model_name].jsonl` containing all predictions, ground truths, and timing data for further analysis.
+
+---
+
+# Automatic CCTV Video Dataset Construction
+
+## Description
+
+This project provides an end-to-end pipeline for automatically collecting, filtering, and refining CCTV anomaly video datasets. It consists of three modules:
+
+1. **Downloader** — generates search queries with CCTV terminology and downloads candidate videos from the web
+2. **Filtering** — classifies videos as CCTV or non-CCTV using VLMs (see above)
+3. **Refinement** — splits full-length CCTV videos into short anomaly clips (1–5 seconds) using VQA-based frame detection
+
+The pipeline targets four anomaly classes — **Fire, Smoke, Violence, and Falldown** — producing 20–30 high-quality clips per class for downstream computer vision research.
+
+## Installation
 
 ```bash
 # Create environment with Python 3.10+
 conda create -n piaspace python=3.10
 conda activate piaspace
 
-# Install PyTorch with CUDA support (adjust CUDA version as needed)
+# Install PyTorch with CUDA support (adjust version as needed)
 conda install pytorch torchvision pytorch-cuda=12.4 -c pytorch -c nvidia
 
 # Install all project dependencies
 pip install -r requirements/all.txt
 
-# For filtering module with flash attention (optional, for better performance):
+# Optional: flash attention for filtering module
 pip install --extra-index-url https://miropsota.github.io/torch_packages_builder flash_attn==2.8.3+pt2.6.0cu124
 ```
 
@@ -45,91 +189,86 @@ export OPENAI_API_KEY='your-api-key-here'
 
 ## How to Use
 
-Before running any module, adjust the hyperparameters in the configuration files located in `assets/cfg/` to match your requirements (see [Configuration & Hyperparameters](#configuration--hyperparameters) section below).
+Before running, adjust hyperparameters in the configuration files under `assets/cfg/` (see [Configuration & Hyperparameters](#configuration--hyperparameters)).
 
 ### Complete Pipeline
-
-Run all three modules sequentially:
 
 ```bash
 bash scripts/all.sh
 ```
 
-This executes the downloader, filtering, and refinement modules in order using their respective configuration files.
+Runs downloader → filtering → refinement sequentially.
 
 ### Module 1: Downloader
 
-Search and download videos from various sources:
-
 ```bash
-# Using configuration file (recommended)
 bash scripts/run_downloader.sh
 ```
 
+Searches and downloads videos from YouTube, Google, or other sources using LLM-generated queries enhanced with CCTV-specific terminology.
+
 ### Module 2: Filtering
 
-Classify videos as CCTV or non-CCTV using VLMs:
-
 ```bash
-# Using configuration file
 bash scripts/filtering_module.sh
 ```
 
-The filtering module processes videos through InternVL or Qwen-VL models, extracts frames, and outputs classification results with confidence scores and reasoning.
+Samples frames from downloaded videos and classifies them as CCTV or non-CCTV using InternVL or Qwen-VL models. Outputs classification results with confidence scores and reasoning.
 
 ### Module 3: Refinement
 
-Perform additional quality control using VQA:
-
 ```bash
-# Using configuration file
 bash scripts/refinement_module.sh
 ```
 
+Samples 64 frames per CCTV video, uses VQA to identify frames containing the target anomaly (fire, smoke, violence, or falldown), maps frame IDs to timestamps, and cuts 1–5 second clips around detected moments.
+
 ## Configuration & Hyperparameters
 
-All modules are configured via YAML files in `assets/cfg/`. Edit these files before running to customize the pipeline for your use case. Command-line arguments override configuration file values.
+All modules are configured via YAML files in `assets/cfg/`. Edit these before running. Command-line arguments override config file values.
 
 ### Downloader Module (`assets/cfg/downloader_module/config.yaml`)
 
-  - `use_llm` (bool): Use LLM to automatically generate search queries. Set to `false` to use manual queries.
-  - `llm.backend` (str): LLM backend - `openai` or `qwen`
-  - `llm.model` (str): Model name or path (e.g., `gpt-4o-mini` or `Qwen/Qwen2.5-1.5B-Instruct`)
-  - `search_queries` (list): Manual search queries when `use_llm` is false (e.g., `["cctv fire video"]`)
-  - `search_queries_file` (str): Path to file with search queries (one per line)
-  - `search_queries_per_class` (int): Number of queries to generate per class when using LLM (default: 5)
-  - `data_source` (str): Video search source - `youtube`, `google`, `ddgs`, or `browser_use`
-  - `search.videos_per_keyword` (int): Number of videos to download per search query (default: 10)
-  - `search.max_results` (int): Maximum results per query (overrides videos_per_keyword if set)
-  - `download.output_dir` (str): Output directory for downloaded videos
-  - `class_name` (list): List of anomaly classes to collect (e.g., `["Fire", "Violence", "Smoke"]`)
+| Parameter | Type | Description |
+|---|---|---|
+| `use_llm` | bool | Use LLM to auto-generate search queries (set `false` for manual queries) |
+| `llm.backend` | str | LLM backend: `openai` or `qwen` |
+| `llm.model` | str | Model path (e.g., `gpt-4o-mini`, `Qwen/Qwen2.5-1.5B-Instruct`) |
+| `search_queries` | list | Manual search queries when `use_llm` is false |
+| `search_queries_file` | str | Path to file with queries (one per line) |
+| `search_queries_per_class` | int | Queries per class when using LLM (default: 5) |
+| `data_source` | str | Video source: `youtube`, `google`, `ddgs`, or `browser_use` |
+| `search.videos_per_keyword` | int | Videos to download per query (default: 10) |
+| `search.max_results` | int | Max results per query |
+| `download.output_dir` | str | Output directory for downloaded videos |
+| `class_name` | list | Anomaly classes: `["Fire", "Violence", "Smoke", "Falldown"]` |
 
 ### Filtering Module (`assets/cfg/filtering_module/config4.yaml`)
 
-  - `model_type` (str): Which VLM(s) to use - `internvl`, `qwenvl`, or `both`
-  - `models` (list): List of models with `name`, `type`, and `path` fields
-    - Example: `{name: "Qwen3-VL-2B", type: "qwenvl", path: "Qwen/Qwen3-VL-2B-Instruct"}`
-  - `num_frames` (int): Number of frames to extract from each video (default: 8)
-  - `importance_sampling` (bool): Use importance-based frame sampling (not yet implemented)
-  - `prompt_path` (str): Path to prompt file for CCTV classification
-  - `output_mode` (str): Output format - `json` or `text`
-  - `output_file` (str): Path to save classification results (used by refinement module)
-  - `mode` (str): Operation mode - `test` (process from downloader_folder) or `eval` (process from dataset)
-  - `downloader_folder` (str): Input folder containing downloaded videos (when mode=test)
-  - `dataset_path` (str): Path to dataset JSONL file (when mode=eval)
-  - `video_folder` (str): Folder containing video files (when mode=eval)
+| Parameter | Type | Description |
+|---|---|---|
+| `model_type` | str | VLM(s) to use: `internvl`, `qwenvl`, or `both` |
+| `models` | list | Model entries with `name`, `type`, and `path` fields |
+| `num_frames` | int | Frames to extract per video (default: 8) |
+| `importance_sampling` | bool | Use importance-based frame sampling |
+| `prompt_path` | str | Path to prompt file for CCTV classification |
+| `output_mode` | str | Output format: `json` or `text` |
+| `output_file` | str | Path to save classification results |
+| `mode` | str | `test` (from downloader_folder) or `eval` (from dataset) |
+| `downloader_folder` | str | Input folder for downloaded videos (mode=test) |
+| `dataset_path` | str | Path to dataset JSONL (mode=eval) |
+| `video_folder` | str | Folder containing video files (mode=eval) |
 
 ### Refinement Module (`assets/cfg/refinement_module/exp_1.yaml`)
 
-  - `refinement_module.enabled` (bool): Enable or disable refinement module
-  - `refinement_module.input_dir` (str): Input path (filtering module output JSONL)
-  - `refinement_module.output_dir` (str): Output directory for refined results
-  - `sampling.num_frames` (int): Number of frames to extract for VQA analysis (default: 64)
-  - `sampling.chunk_size` (int): Chunk size for processing frames (default: 16)
-  - `vqa.max_new_tokens` (int): Maximum tokens for VQA output (default: 512)
-  - `vqa.output_mode` (str): VQA output format - recommended: `indices_scores_v4` (best performance)
-    - Index-only modes: `indices`, `indices_v3`, `indices_v4`
-    - Index+Score modes: `indices_scores`, `indices_scores_min`, `indices_scores_v4` (recommended)
-    - Score mask modes: `score_mask`, `score_mask_v2`, `score_mask_v3`
-  - `vqa.score_threshold` (float): Score threshold for detection (used in score_mask mode, default: 0.3)
-  - `refinement_module.N` (float): Seconds to pad before/after detected segments (default: 0.0)
+| Parameter | Type | Description |
+|---|---|---|
+| `refinement_module.enabled` | bool | Enable or disable refinement |
+| `refinement_module.input_dir` | str | Input path (filtering module output JSONL) |
+| `refinement_module.output_dir` | str | Output directory for refined clips |
+| `sampling.num_frames` | int | Frames to extract for VQA (default: 64) |
+| `sampling.chunk_size` | int | Chunk size for processing (default: 16) |
+| `vqa.max_new_tokens` | int | Max tokens for VQA output (default: 512) |
+| `vqa.output_mode` | str | VQA output mode — `indices_scores_v4` recommended |
+| `vqa.score_threshold` | float | Score threshold for detection (default: 0.3) |
+| `refinement_module.N` | float | Padding seconds before/after detected segments (default: 0.0) |
